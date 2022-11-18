@@ -1,0 +1,117 @@
+# -*- coding: utf-8 -*-
+"""
+Spyder Editor
+
+This is a temporary script file.
+
+"""
+
+#pip install --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org <package_name>
+
+import pandas as pd
+import numpy as np
+from pandas.io.json import json_normalize
+import folium
+from geopy.geocoders import Nominatim 
+import requests
+
+
+import warnings
+warnings.filterwarnings("ignore")
+
+
+df=pd.read_excel('/Users/DrSingh/Documents/Drish Onboarding/Closed store info.xlsx')
+df_fil=df[['LOC_ID','LOC_LN_2_NME','CITY_NME','TRTRY_NME','LOC_LAT_DEG','LOC_LONG_DEG']]
+df_fil=df_fil.dropna()
+
+df_fil['LOC_LAT_DEG']=df_fil['LOC_LAT_DEG'].astype(str)
+df_fil['LOC_LONG_DEG']=df_fil['LOC_LONG_DEG'].astype(str)
+
+df_fil['ll']=df_fil['LOC_LAT_DEG']+','+df_fil['LOC_LONG_DEG']
+df_fil=df_fil[df_fil['LOC_LAT_DEG']!='?']
+
+#CLIENT_ID='HSEP20XTEYFCW3YAVW1VA5TJQNDFO1FDSJB5TMSKPAFPOH3H'
+#CLIENT_SECRET='2U3WAOAHVYEBG5T50BK35MFHJROUXATTLWNPECFKOFGD0YDO'
+
+#neighborhood_latitude= '41.8781'
+#neighborhood_longitude='-87.6298'
+
+#radius=500
+#LIMIT=100
+#VERSION = '20180604'
+
+def getNearbyVenues(locs,names, latitudes, longitudes,categories='17039', radius=15000,LIMIT=50):
+    headers = {
+        'Accept': 'application/json',
+        'Authorization': 'fsq3oElW6M56XZIrXoz7cXXtgTAETj3SP2jbhU8wGLJ6Zvo='
+    }
+
+    URL = 'https://api.foursquare.com/v3/places/search?ll={},{}&radius={}&limit={}&categories={}'
+
+    venue_df=pd.DataFrame()
+    for loc,name, lat, lng in zip(locs,names, latitudes, longitudes):
+        print(loc)
+
+        url = URL.format(lat, lng, radius, LIMIT,categories)
+        response = requests.get(url, headers=headers,verify=False).json()
+        res=json_normalize(response['results'])
+        
+        print(res.columns)
+        
+        
+        res2 = pd.concat([pd.DataFrame(x) for x in res['categories']], keys=res.index).reset_index(level=1, drop=True)
+        res2.columns=['id2','cat_name','icon']
+        res = res.drop('categories', axis=1).join(res2).reset_index(drop=True)
+
+        res2 = pd.concat([pd.DataFrame(x) for x in res['chains']], keys=res.index).reset_index(level=1, drop=True)
+        res2.columns=['id3','chain_name']
+        res= res.join(res2).reset_index(drop=True)
+
+        try:
+            res_na=res[res['related_places.children'].isna()]
+            res_no_na=res[~res['related_places.children'].isna()]
+        
+
+            
+            res2 = pd.concat([pd.DataFrame(x) for x in res_no_na['related_places.children']], keys=res_no_na.index).reset_index(level=1, drop=True)
+            res2.columns=['id4','child_name']
+            res_no_na= res_no_na.join(res2).reset_index(drop=True)
+
+            res_no_na_final=res_no_na[['fsq_id','name','distance','location.locality','cat_name','chain_name','child_name']]
+            
+            res_na_final=res_na[['fsq_id','name','distance','location.locality','cat_name','chain_name']]
+            res_na_final['child_name']='No Child'
+            final_df=res_no_na_final.append(res_na_final)
+        except:
+            final_df=res[['fsq_id','name','distance','location.locality','cat_name','chain_name']]
+            final_df['child_name']='No Child'
+            
+            
+        final_df['store_id']=loc
+        final_df['loc_name']=name
+        
+        
+        # do stuff here to process venues_list
+        #for record in data['results']:
+            #venues_list.append({
+             #   'Neighborhood': name,
+              #  'Neighborhood Latitude': lat,
+               # 'Neighborhood Longitude': lng,
+                #'Venue': record['name'],
+                #'Venue Latitude': record['geocodes']['main']['latitude'],
+                #'Venue Longitude': record['geocodes']['main']['longitude'],
+                #'Venue Category': record['categories'][0]['name'],
+            #})
+
+    # do stuff here to create your dataframe
+        venue_df = venue_df.append(final_df)
+
+    return(venue_df)
+
+
+test_df=df_fil.iloc[:2]
+
+venues_done=getNearbyVenues(df_fil['LOC_ID'],df_fil['LOC_LN_2_NME'],df_fil['LOC_LAT_DEG'],df_fil['LOC_LONG_DEG'])
+
+
+
